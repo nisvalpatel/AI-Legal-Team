@@ -11,6 +11,199 @@ This document provides a comprehensive breakdown of:
 This serves as the master reference for building the Agentic Legal Team system incrementally.
 
 ---
+## Part 0: Understanding the Agent Architecture (FAQ)
+
+### Q: Is there a "brain" agent that controls everything?
+
+**A: Yes - it's the LangGraph Orchestrator, not a separate agent.**
+
+Think of it like an orchestra:
+- **LangGraph Orchestrator** = The Conductor (decides who plays when)
+- **Specialized Agents** = The Musicians (each plays their instrument)
+
+The orchestrator:
+- Decides which agent runs and when
+- Manages shared state (the "memory" all agents can access)
+- Routes information between agents
+- Handles conditional logic ("if X happened, then run Y")
+- Pauses workflow for human review
+
+The agents are **specialized workers** that execute specific tasks when told to by the orchestrator. They don't make decisions about workflow - they just do their specialized job.
+
+---
+
+### Q: What's the difference between Evidence Agent and Research Agent? Don't they both "research"?
+
+**A: They work on completely different data sources!**
+
+#### Evidence Agent: Analyzes YOUR Case Documents
+- **Input:** Documents YOU upload (police reports, witness statements, transcripts)
+- **Task:** Extract facts, names, dates, events FROM YOUR CASE
+- **Output:** Structured data about YOUR specific case
+- **Example:** "Officer Smith arrived at 123 Main St on June 5, 2024 at 3:15 PM"
+  - Extracts: Person (Officer Smith), Location (123 Main St), Date (June 5, 2024), Time (3:15 PM)
+
+#### Research Agent: Searches External Legal Databases
+- **Input:** Legal questions/issues identified from your case
+- **Task:** Search public legal databases for relevant laws and precedents
+- **Output:** Legal authorities with citations
+- **Example:** "Search for Fourth Amendment search warrant cases"
+  - Finds: *Terry v. Ohio*, 392 U.S. 1 (1968), relevant statutes, precedents
+
+**Key Distinction:**
+- Evidence Agent = "What does MY case say?"
+- Research Agent = "What does THE LAW say?"
+
+---
+
+### Q: Why do we need 5 separate agents? Couldn't one agent do everything?
+
+**Single "Super Agent" Problems:**
+- Context overload (too much information at once)
+- Mixed responsibilities (extraction + research + synthesis all together)
+- Harder to debug (which part failed?)
+- Less modular (can't improve one part independently)
+- Slower (everything runs sequentially)
+
+**Multi-Agent Benefits:**
+- **Separation of concerns:** Each agent has ONE clear job
+- **Parallel execution:** Timeline and Research can run simultaneously
+- **Easier debugging:** Know exactly which agent failed
+- **Modular improvement:** Upgrade Evidence Agent without touching Research
+- **Clearer prompts:** Each agent has focused, specific instructions
+- **Better traceability:** Track which agent produced which output
+
+---
+
+### Q: What does each agent actually do? (Simple explanation)
+
+#### 1. Evidence Agent
+**Job:** Read your documents and extract facts
+**Analogy:** A paralegal highlighting key information in case files
+**Pros:** Automates tedious document reading, consistent extraction, links facts to sources
+**Cons:** May miss nuanced context, requires human review for accuracy
+
+#### 2. Timeline Agent
+**Job:** Put all events in chronological order
+**Analogy:** Creating a timeline on a whiteboard with sticky notes
+**Pros:** Automatically orders events, identifies gaps, spots timing conflicts
+**Cons:** Struggles with ambiguous dates, can't resolve contradictory timelines alone
+
+#### 3. Contradiction Agent
+**Job:** Find where different documents say different things
+**Analogy:** A fact-checker comparing witness statements
+**Pros:** Systematically compares claims, identifies conflicts humans might miss
+**Cons:** May flag false positives, can't resolve contradictions (only identify them)
+
+#### 4. Research Agent
+**Job:** Search legal databases for relevant laws and cases
+**Analogy:** A law librarian finding relevant precedents
+**Pros:** Searches vast databases quickly, provides proper citations
+**Cons:** Limited to indexed materials, may retrieve irrelevant cases
+
+#### 5. Strategy Agent
+**Job:** Combine everything into a coherent analysis memo
+**Analogy:** A senior attorney synthesizing all information into strategy
+**Pros:** Combines all outputs, identifies key issues, provides recommendations
+**Cons:** Only as good as inputs from other agents, requires human review
+
+---
+
+### Q: How do the agents work together?
+
+**The Workflow:**
+
+```
+1. User uploads documents
+   ↓
+2. Evidence Agent extracts facts from YOUR documents
+   ↓
+3. [PARALLEL EXECUTION]
+   - Timeline Agent builds chronology from extracted facts
+   - Research Agent searches legal databases for relevant law
+   ↓
+4. Contradiction Agent compares claims across documents
+   ↓
+5. Strategy Agent synthesizes everything into a memo
+   ↓
+6. Human reviews and approves (or requests changes)
+```
+
+**Shared State (The "Memory"):**
+All agents read from and write to a shared state object:
+```python
+{
+    "case_id": "uuid",
+    "documents": [...],           # From ingestion
+    "entities": {...},            # From Evidence Agent
+    "facts": [...],               # From Evidence Agent
+    "timeline": [...],            # From Timeline Agent
+    "contradictions": [...],      # From Contradiction Agent
+    "research_results": [...],    # From Research Agent
+    "strategy_memo": {...},       # From Strategy Agent
+    "review_status": "pending"    # For human review
+}
+```
+
+---
+
+### Q: Could we simplify this? Do we really need all 5 agents?
+
+**Yes! Here are simpler options:**
+
+#### Option 1: MVP with 3 Agents (Recommended for starting)
+1. **Evidence Agent** - Extract facts from YOUR documents
+2. **Research Agent** - Search EXTERNAL legal databases
+3. **Strategy Agent** - Synthesize into memo
+
+**Why this works:**
+- Complete workflow (input → analysis → output)
+- Can produce useful results
+- Easier to learn orchestration
+- Add Timeline and Contradiction later
+
+#### Option 2: Ultra-Simple with 2 Agents
+1. **Analysis Agent** - Combines Evidence + Timeline + Contradiction
+2. **Strategy Agent** - Research + Synthesis
+
+**Why this works:**
+- Simplest orchestration
+- Fastest to build
+- Good for learning basics
+
+**Trade-offs:**
+- Less modular
+- Harder to optimize
+- More context per agent
+
+#### Option 3: Full 5 Agents (As originally planned)
+- Most modular and specialized
+- Best for learning multi-agent patterns
+- More complex to build initially
+
+**My Recommendation:** Start with 3 agents (Evidence, Research, Strategy), then add Timeline and Contradiction once you understand the orchestration patterns.
+
+---
+
+### Q: Why can't we combine certain agents?
+
+**Evidence + Timeline?**
+- Timeline needs ALL facts from ALL documents before ordering
+- Better to extract first (Evidence), then organize chronologically (Timeline)
+- Timeline logic is complex enough to warrant separation
+
+**Research + Strategy?**
+- Research is retrieval (finding raw materials)
+- Strategy is synthesis (interpreting and combining)
+- Strategy needs research results + evidence + timeline all together
+
+**Contradiction + Evidence?**
+- Contradiction detection requires comparing ACROSS documents
+- Evidence Agent processes ONE document at a time
+- Contradiction needs the complete fact set first
+
+---
+
 
 ## Part 1: Agentic Workflow Architecture
 
